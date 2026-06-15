@@ -1,92 +1,150 @@
 import streamlit as st
+import pandas as pd
 from textblob import TextBlob
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from collections import Counter
 
-# Download necessary NLTK data safely within the app
+# Ensure NLTK resources are downloaded
 @st.cache_resource
-def download_nltk_resources():
+def load_nltk():
     try:
         nltk.download('punkt')
         nltk.download('stopwords')
-        nltk.download('averaged_perceptron_tagger')
     except Exception as e:
-        st.error(f"Error downloading NLTK resources: {e}")
+        st.error(f"Error loading NLTK: {e}")
 
-download_nltk_resources()
+load_nltk()
 
-# --- App Layout & Header ---
-st.set_page_config(page_title="NLP Lab Workspace", page_icon="🤖", layout="wide")
+# --- Page Config ---
+st.set_page_config(page_title="Enterprise Review Auditor", page_icon="📈", layout="wide")
 
-st.title("🤖 NLP Multi-Task Lab Workspace")
-st.markdown("Welcome! Input your text below to test different Natural Language Processing tasks in real-time.")
+st.title("📈 Enterprise Customer Feedback & Review Auditor")
+st.markdown("Analyze customer reviews at scale, track sentiment metrics, and flag high-priority issues instantly.")
 
----
-
-# --- Text Input Area ---
-user_text = st.text_area(
-    "Enter the text you want to analyze:",
-    value="Artificial Intelligence is transforming the world. Streamlit makes it incredibly easy to build data applications quickly! However, debugging complex neural models can sometimes be challenging.",
-    height=150
+# --- Sidebar for Preset Demo Data ---
+st.sidebar.header("📋 Load Demo Dataset")
+demo_industry = st.sidebar.selectbox(
+    "Choose an industry to test preset reviews:",
+    ["Tech Gadget Reviews", "Hotel & Hospitality Feedback"]
 )
 
-if st.button("Run Analysis", type="primary"):
-    if user_text.strip() == "":
-        st.warning("Please enter some text first!")
+# Preset data matching real-world scenarios
+tech_reviews = [
+    "The battery life on this laptop is absolutely incredible! Lasts a full 12 hours. Highly recommend.",
+    "Worst customer service ever. The screen arrived cracked, and support refused to issue a refund.",
+    "It works okay, but the keyboard feels a bit cheap for this price point. Mediocre experience.",
+    "Extremely fast processor and beautiful display! Best purchase I have made this year.",
+    "The software keeps crashing every time I try to open a heavy project. Very frustrating product."
+]
+
+hotel_reviews = [
+    "The room was pristine, and the staff went above and beyond to make our anniversary special!",
+    "Terrible experience. The AC didn't work all night, and the room smelled like damp smoke.",
+    "Good location close to downtown, but the breakfast options were very limited and cold.",
+    "Amazing rooftop view and excellent room service. Will definitely stay here again next time.",
+    "Checking in took almost an hour. The front desk was understaffed and quite disorganized."
+]
+
+selected_reviews = tech_reviews if demo_industry == "Tech Gadget Reviews" else hotel_reviews
+
+# --- Main Interface ---
+st.subheader("📥 Input Reviews for Auditing")
+user_input = st.text_area(
+    "Paste your customer reviews here (One review per line):",
+    value="\n".join(selected_reviews),
+    height=180
+)
+
+# Process Data
+if st.button("Analyze Dataset", type="primary"):
+    reviews_list = [line.strip() for line in user_input.split("\n") if line.strip()]
+    
+    if not reviews_list:
+        st.warning("Please enter at least one review to analyze.")
     else:
-        # Create tabs for different NLP tasks
-        tab1, tab2, tab3 = st.tabs(["📊 Sentiment Analysis", "🏷️ POS Tagging & Tokens", "🔑 Key Metrics"])
+        # Data Pipeline Processing
+        processed_data = []
+        sentiment_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
+        all_cleaned_words = []
+        stop_words = set(stopwords.words('english'))
 
-        # --- TAB 1: Sentiment Analysis ---
-        with tab1:
-            st.subheader("Sentiment Analysis (via TextBlob)")
-            blob = TextBlob(user_text)
+        for review in reviews_list:
+            blob = TextBlob(review)
             polarity = blob.sentiment.polarity
-            subjectivity = blob.sentiment.subjectivity
             
-            # Metric displays
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(label="Polarity (Sentiment)", value=f"{polarity:.2f}", help="-1 is negative, 1 is positive")
-            with col2:
-                st.metric(label="Subjectivity", value=f"{subjectivity:.2f}", help="0 is objective, 1 is subjective")
-            
-            # Friendly sentiment verdict
-            if polarity > 0.1:
-                st.success("✨ **Overall Sentiment:** Positive")
-            elif polarity < -0.1:
-                st.error("📉 **Overall Sentiment:** Negative")
+            # Classify Sentiment
+            if polarity > 0.15:
+                status = "Positive"
+                sentiment_counts["Positive"] += 1
+            elif polarity < -0.15:
+                status = "Negative"
+                sentiment_counts["Negative"] += 1
             else:
-                st.info("😐 **Overall Sentiment:** Neutral")
+                status = "Neutral"
+                sentiment_counts["Neutral"] += 1
+            
+            # Real-world logic: Flag negative reviews for immediate customer support action
+            action_flag = "🚨 High Priority Action" if polarity < -0.2 else "✅ Normal"
+            
+            processed_data.append({
+                "Review Text": review,
+                "Sentiment Score": round(polarity, 2),
+                "Category": status,
+                "Audit Status": action_flag
+            })
 
-        # --- TAB 2: Tokenization & POS Tagging ---
-        with tab2:
-            st.subheader("Tokenization & Part-of-Speech Tagging")
-            tokens = word_tokenize(user_text)
-            pos_tags = nltk.pos_tag(tokens)
-            
-            st.write(f"**Total Tokens (Words/Punctuation):** {len(tokens)}")
-            
-            # Format POS tags for clean display
-            formatted_tags = [{"Token": token, "POS Tag": tag} for token, tag in pos_tags]
-            st.dataframe(formatted_tags, use_container_width=True)
+            # Tokenize for keyword analytics
+            words = [w.lower() for w in word_tokenize(review) if w.isalnum()]
+            all_cleaned_words.extend([w for w in words if w not in stop_words])
 
-        # --- TAB 3: Text Statistics & Stopwords ---
-        with tab3:
-            st.subheader("Text Statistics")
-            words = [word.lower() for word in word_tokenize(user_text) if word.isalnum()]
-            stop_words = set(stopwords.words('english'))
-            filtered_words = [word for word in words if word not in stop_words]
+        # Convert to Pandas DataFrame for advanced manipulation
+        df = pd.DataFrame(processed_data)
+
+        # --- Dashboard Metrics Layout ---
+        st.markdown("---")
+        st.subheader("📊 Executive Summary Metrics")
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Reviews Audited", len(df))
+        m2.metric("Positive Reviews", sentiment_counts["Positive"], delta=f"{int(sentiment_counts['Positive']/len(df)*100)}%")
+        m3.metric("Negative Reviews", sentiment_counts["Negative"], delta=f"-{int(sentiment_counts['Negative']/len(df)*100)}%", delta_color="inverse")
+        m4.metric("Urgent Support Tickets", len(df[df["Audit Status"] == "🚨 High Priority Action"]))
+
+        # --- Visualizations & Analytics ---
+        col_chart, col_words = st.columns([1, 1])
+        
+        with col_chart:
+            st.markdown("### 🥧 Sentiment Distribution")
+            chart_data = pd.DataFrame({
+                "Category": sentiment_counts.keys(),
+                "Count": sentiment_counts.values()
+            })
+            # Interactive Streamlit Bar Chart
+            st.bar_chart(chart_data.set_index("Category"), color="#29b5e8")
+
+        with col_words:
+            st.markdown("### 🔑 Trending Keywords")
+            word_counts = Counter(all_cleaned_words)
+            top_words = word_counts.most_common(5)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**Total Words (No punctuation):** {len(words)}")
-                st.markdown(f"**Words after removing Stopwords:** {len(filtered_words)}")
-            
-            with col2:
-                st.markdown("**Most Common Keywords (excluding stopwords):**")
-                word_counts = Counter(filtered_words)
-                for word, count in word_counts.most_common(3):
-                    st.write(f"- `{word}`: {count} times")
+            if top_words:
+                for word, count in top_words:
+                    st.markdown(f"- **{word.title()}** — mentioned `{count}` times")
+            else:
+                st.write("Not enough text data to extract keywords.")
+
+        # --- Data Table and Export ---
+        st.markdown("---")
+        st.subheader("📋 Audited Data Log")
+        st.dataframe(df, use_container_width=True)
+
+        # Download Report Feature
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Full Audit Report (CSV)",
+            data=csv,
+            file_name="customer_audit_report.csv",
+            mime="text/csv"
+        )
