@@ -1,4 +1,2 @@
 streamlit
-textblob
-nltk
-pandas
+deep-translator
